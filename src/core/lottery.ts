@@ -72,13 +72,8 @@ const TABLES: Record<SettingLevel, ReadonlyArray<WeightedEntry>> = {
 
 // ── 抽選関数 ─────────────────────────────────────────────────
 
-/** レバーON時の内部抽選 (§12)。C4: デバッグフラグが設定されていれば1回消費して返す。 */
+/** レバーON時のランダム抽選 (§12)。debugForcedFlag の消費は stateMachine 側で行う。 */
 export function selectFlag(gs: GameState): Flag {
-  if (gs.debugForcedFlag !== null) {
-    const f = gs.debugForcedFlag;
-    gs.debugForcedFlag = null;
-    return f;
-  }
   return drawFromTable(gs.settingLevel);
 }
 

@@ -3,7 +3,7 @@
 // BONUS_ENTRY = 入賞ゲーム1回 (7-7-7 or 7-7-BAR 固定, 払い出し 0)
 // BONUS_GAME  = 消化ゲーム    (BELL-BELL-BELL 固定, 14枚×規定回数)
 
-import { FLAG } from '../types/domain';
+import { FLAG, type Flag, type SettingLevel } from '../types/domain';
 import type { GameState } from '../types/state';
 import type { Phase, SpinSubPhase } from '../types/phase';
 import { nextStateAfterBonus } from '../types/bonus';
@@ -24,7 +24,12 @@ export type Action =
   | { type: 'AUTO_TICK' }            // bonusManualMode=false 時の自動進行
   | { type: 'RUSH_END_DONE' }        // RUSH終了演出完了 → SPIN へ
   | { type: 'SET_AUTO';         value: boolean }
-  | { type: 'SET_BONUS_MANUAL'; value: boolean };
+  | { type: 'SET_BONUS_MANUAL'; value: boolean }
+  // ── DEV / プロトタイプ専用 ────────────────────────────────────
+  | { type: 'ADD_COINS';         amount: number }
+  | { type: 'SET_SETTING_LEVEL'; level: SettingLevel }   // §C5 resetForSettingChange
+  | { type: 'SET_DEBUG_FLAG';    flag: Flag | null }      // §C4 1回消費型
+  | { type: 'SET_DEBUG_RUSH';    result: 'SUCCESS' | 'FAIL' | null };
 
 const BET_COST          = 3;
 const CEILING_THRESHOLD = 500;  // §C3
@@ -59,11 +64,28 @@ export function transition(gs: GameState, action: Action): GameState {
     case 'RUSH_END_DONE':     return { ...gs, rushTotalPayout: 0, rushActive: false, phase: { kind: 'SPIN', sub: 'WAIT_BET' } };
     case 'SET_AUTO':          return { ...gs, autoMode:        action.value };
     case 'SET_BONUS_MANUAL':  return { ...gs, bonusManualMode: action.value };
+    case 'ADD_COINS':         return { ...gs, coins: gs.coins + action.amount };
+    case 'SET_SETTING_LEVEL': return resetForSettingChange(gs, action.level);
+    case 'SET_DEBUG_FLAG':    return { ...gs, debugForcedFlag:      action.flag };
+    case 'SET_DEBUG_RUSH':    return { ...gs, debugForcedRushResult: action.result };
     default: {
       const _exhaustive: never = action;
       throw new Error(`transition: unknown action: ${JSON.stringify(_exhaustive)}`);
     }
   }
+}
+
+// ── §C5: 設定変更時リセット ────────────────────────────────────
+
+function resetForSettingChange(gs: GameState, level: SettingLevel): GameState {
+  return {
+    ...gs,
+    settingLevel:          level,
+    normalGameCount:       0,
+    pendingFlag:           null,
+    debugForcedFlag:       null,
+    debugForcedRushResult: null,
+  };
 }
 
 // ── BET ──────────────────────────────────────────────────────
@@ -109,12 +131,18 @@ function onLever(gs: GameState): GameState {
     };
   }
 
-  // §C3: 天井チェック (SPIN かつ RUSH外 かつ通常ゲーム数 >= 500)
-  let pendingFlag     = gs.pendingFlag;
-  let normalGameCount = gs.normalGameCount;
-  if (ph.kind === 'SPIN' && !gs.rushActive && gs.normalGameCount >= CEILING_THRESHOLD) {
-    pendingFlag      = FLAG.CEILING_BIG;
-    normalGameCount  = 0;
+  // §C4: 強制フラグが最優先 (天井・通常抽選より上位、1回消費)
+  let pendingFlag      = gs.pendingFlag;
+  let normalGameCount  = gs.normalGameCount;
+  let debugForcedFlag  = gs.debugForcedFlag;
+
+  if (debugForcedFlag !== null) {
+    pendingFlag     = debugForcedFlag;
+    debugForcedFlag = null;
+  } else if (ph.kind === 'SPIN' && !gs.rushActive && gs.normalGameCount >= CEILING_THRESHOLD) {
+    // §C3: 天井チェック
+    pendingFlag     = FLAG.CEILING_BIG;
+    normalGameCount = 0;
   } else {
     pendingFlag = selectFlag(gs);
   }
@@ -123,6 +151,7 @@ function onLever(gs: GameState): GameState {
     ...gs,
     pendingFlag,
     normalGameCount,
+    debugForcedFlag,
     reelPos:      getNormalSpinStops(pendingFlag),
     reelSpinning: [true, true, true],
     leverDown:    true,

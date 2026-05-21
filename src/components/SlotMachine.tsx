@@ -4,10 +4,18 @@ import { FLAG } from '../types/domain';
 import { transition, type Action } from '../core/stateMachine';
 import { getNormalSpinStops } from '../core/reels';
 import { deriveUIState } from '../ui/deriveUIState';
-import { Cabinet }    from './Cabinet';
-import { Counters }   from './Counters';
-import { ReelWindow } from './ReelWindow';
-import { Controls }   from './Controls';
+import {
+  DEFAULT_UI_SETTINGS, AUTO_SPEED_DELAY,
+  type UISettings,
+} from '../ui/uiSettings';
+import { Cabinet }       from './Cabinet';
+import { Counters }      from './Counters';
+import { ReelWindow }    from './ReelWindow';
+import { Controls }      from './Controls';
+import { SettingsModal } from './SettingsModal';
+// DevPanel / ForcedFlagPanel は import.meta.env.DEV ガードで本番ビルドから tree-shake される
+import { DevPanel }       from './DevPanel';
+import { ForcedFlagPanel } from './ForcedFlagPanel';
 
 // ── 初期状態 ─────────────────────────────────────────────────
 
@@ -47,11 +55,12 @@ export function SlotMachine() {
   const [gs, dispatch]    = useReducer(transition, INITIAL);
   const [pressedStops, setPressedStops] =
     useState<[boolean, boolean, boolean]>([false, false, false]);
+  const [uiSettings, setUiSettings] = useState<UISettings>(DEFAULT_UI_SETTINGS);
+  const [showSettings, setShowSettings] = useState(false);
 
   const ui = deriveUIState(gs);
 
   // ── §30-8: 停止ボタン押下状態 ─────────────────────────────
-  // WAIT_BET に戻ったとき(払い出し完了後)に解除
   useEffect(() => {
     if (!('sub' in gs.phase) || gs.phase.sub !== 'WAIT_BET') return;
     const t = setTimeout(() => setPressedStops([false, false, false]), 200);
@@ -70,34 +79,42 @@ export function SlotMachine() {
     return () => { clearTimeout(t); };
   }, [gs.phase]);
 
-  // ── AUTO モード: 同じ UI 遷移をタイマーで自動発火 (§30-14) ─
+  // ── ペカ時 AUTO 停止 (stopAutoOnPeka) ────────────────────
+  useEffect(() => {
+    if (gs.jackLampState !== 'on') return;
+    if (!uiSettings.stopAutoOnPeka || !gs.autoMode) return;
+    dispatch({ type: 'SET_AUTO', value: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [gs.jackLampState]);
+
+  // ── AUTO / ボーナス自動消化タイマー (§30-14) ─────────────
+  // BONUS_ENTRY/GAME は bonusManualMode=false なら autoMode 無関係に自動進行
+  // 通常フェーズは autoMode=true のときのみ
   const autoRef = useRef(gs.autoMode);
   autoRef.current = gs.autoMode;
 
   useEffect(() => {
-    if (!gs.autoMode) return;
     const ph = gs.phase;
-
+    const delay = AUTO_SPEED_DELAY[uiSettings.autoSpeed];
     let act: Action | null = null;
-    let delay = 200;
 
     if (ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') {
-      act = { type: 'AUTO_TICK' }; delay = 120;
-    } else if ('sub' in ph) {
+      if (!gs.bonusManualMode) act = { type: 'AUTO_TICK' };
+    } else if (gs.autoMode && 'sub' in ph) {
       switch (ph.sub) {
-        case 'WAIT_BET':   act = { type: 'BET' };              delay = 80;  break;
-        case 'WAIT_LEVER': act = { type: 'LEVER' };            delay = 180; break;
-        case 'STOP_L':     act = { type: 'STOP', reel: 'L' };  delay = 120; break;
-        case 'STOP_C':     act = { type: 'STOP', reel: 'C' };  delay = 120; break;
-        case 'STOP_R':     act = { type: 'STOP', reel: 'R' };  delay = 120; break;
+        case 'WAIT_BET':   act = { type: 'BET' };             break;
+        case 'WAIT_LEVER': act = { type: 'LEVER' };           break;
+        case 'STOP_L':     act = { type: 'STOP', reel: 'L' }; break;
+        case 'STOP_C':     act = { type: 'STOP', reel: 'C' }; break;
+        case 'STOP_R':     act = { type: 'STOP', reel: 'R' }; break;
       }
     }
 
     if (act === null) return;
     const captured = act;
-    const t = setTimeout(() => { if (autoRef.current) dispatch(captured); }, delay);
+    const t = setTimeout(() => { if (autoRef.current || captured.type === 'AUTO_TICK') dispatch(captured); }, delay);
     return () => clearTimeout(t);
-  }, [gs.autoMode, gs.phase]);
+  }, [gs.autoMode, gs.bonusManualMode, gs.phase, uiSettings.autoSpeed]);
 
   // ── ハンドラ ──────────────────────────────────────────────
 
@@ -114,10 +131,27 @@ export function SlotMachine() {
     dispatch({ type: 'STOP', reel });
   }
 
-  function handleAutoToggle()   { dispatch({ type: 'SET_AUTO',         value: !gs.autoMode }); }
-  function handleManualToggle() { dispatch({ type: 'SET_BONUS_MANUAL', value: !gs.bonusManualMode }); }
+  function handleAutoToggle() { dispatch({ type: 'SET_AUTO', value: !gs.autoMode }); }
 
-  // ── フェーズ表示ラベル (デバッグ用ヘッダー) ───────────────
+  // §30-15: 筐体背景クリックで現フェーズの次アクションを発火
+  function handleScreenClick() {
+    if (gs.isProcessing) return;
+    const ph = gs.phase;
+    if (!('sub' in ph)) return; // BONUS_NOTICE / RUSH_END は無視
+    switch (ph.sub) {
+      case 'WAIT_BET':   dispatch({ type: 'BET' });             break;
+      case 'WAIT_LEVER': dispatch({ type: 'LEVER' });           break;
+      case 'STOP_L':     handleStop('L');                        break;
+      case 'STOP_C':     handleStop('C');                        break;
+      case 'STOP_R':     handleStop('R');                        break;
+    }
+  }
+
+  function handleSettingsChange(patch: Partial<UISettings>) {
+    setUiSettings(prev => ({ ...prev, ...patch }));
+  }
+
+  // ── フェーズ表示ラベル ─────────────────────────────────────
 
   const phaseLabel = (() => {
     const ph = gs.phase;
@@ -128,57 +162,75 @@ export function SlotMachine() {
   })();
 
   return (
-    <Cabinet isNotice={gs.phase.kind === 'BONUS_NOTICE'}>
+    <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
 
-      {/* フェーズ表示 */}
-      <div style={{
-        textAlign:  'center',
-        fontSize:   11,
-        color:      '#446',
-        letterSpacing: 1,
-      }}>
-        {phaseLabel}
-        {gs.bonusContext && (
-          <span style={{ marginLeft: 8, color: '#664' }}>
-            [{gs.bonusContext.kind} rem={gs.bonusContext.remainingPayout}]
-          </span>
-        )}
-      </div>
+      <Cabinet isNotice={gs.phase.kind === 'BONUS_NOTICE'} onClick={handleScreenClick}>
 
-      <Counters
-        coins={ui.coins}
-        lastNormalPayout={gs.lastNormalPayout}
-        normalGameCount={gs.normalGameCount}
-        rushActive={ui.rushActive}
-        rushSetIndex={ui.rushSetIndex}
-        rushTotalPayout={ui.rushTotalPayout}
-      />
+        {/* フェーズ表示 */}
+        <div style={{
+          textAlign:  'center',
+          fontSize:   11,
+          color:      '#446',
+          letterSpacing: 1,
+        }}>
+          {phaseLabel}
+          {gs.bonusContext && (
+            <span style={{ marginLeft: 8, color: '#664' }}>
+              [{gs.bonusContext.kind} rem={gs.bonusContext.remainingPayout}]
+            </span>
+          )}
+        </div>
 
-      <ReelWindow
-        reelWindow={ui.reelWindow}
-        reelSpinning={ui.reelSpinning}
-      />
+        <Counters
+          coins={ui.coins}
+          lastNormalPayout={gs.lastNormalPayout}
+          normalGameCount={gs.normalGameCount}
+          rushActive={ui.rushActive}
+          rushSetIndex={ui.rushSetIndex}
+          rushTotalPayout={ui.rushTotalPayout}
+        />
 
-      {/* LCD モード表示 (Priority 2 で LCD.tsx に置換) */}
-      <LcdPlaceholder lcdContent={ui.lcdContent} />
+        <ReelWindow
+          reelWindow={ui.reelWindow}
+          reelSpinning={ui.reelSpinning}
+        />
 
-      <Controls
-        buttons={ui.buttons}
-        pressedStops={pressedStops}
-        autoMode={gs.autoMode}
-        bonusManualMode={gs.bonusManualMode}
-        onBet={handleBet}
-        onLever={handleLever}
-        onStop={handleStop}
-        onAutoToggle={handleAutoToggle}
-        onManualToggle={handleManualToggle}
-      />
+        {/* LCD モード表示 */}
+        <LcdPlaceholder lcdContent={ui.lcdContent} />
 
-    </Cabinet>
+        <Controls
+          buttons={ui.buttons}
+          pressedStops={pressedStops}
+          autoMode={gs.autoMode}
+          onBet={handleBet}
+          onLever={handleLever}
+          onStop={handleStop}
+          onAutoToggle={handleAutoToggle}
+          onSettingsOpen={() => setShowSettings(true)}
+        />
+
+      </Cabinet>
+
+      {/* DEV パネル群: 本番ビルドでは import.meta.env.DEV === false で dead-code 除去 */}
+      {import.meta.env.DEV && <DevPanel gs={gs} dispatch={dispatch} />}
+      {import.meta.env.DEV && <ForcedFlagPanel gs={gs} dispatch={dispatch} />}
+
+      {/* 設定モーダル */}
+      {showSettings && (
+        <SettingsModal
+          settings={uiSettings}
+          bonusManualMode={gs.bonusManualMode}
+          onClose={() => setShowSettings(false)}
+          onChange={handleSettingsChange}
+          onBonusManual={v => dispatch({ type: 'SET_BONUS_MANUAL', value: v })}
+        />
+      )}
+
+    </div>
   );
 }
 
-// ── LCD プレースホルダー (Priority 2 で LCD.tsx に置換) ───────
+// ── LCD プレースホルダー ───────────────────────────────────────
 
 import type { LCDContent } from '../ui/UIState';
 

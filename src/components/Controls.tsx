@@ -2,23 +2,26 @@ import type { ButtonState } from '../ui/UIState';
 import { BUTTON, COLORS } from '../ui/layout';
 
 type Props = {
-  buttons:         ButtonState;
-  pressedStops:    readonly [boolean, boolean, boolean];
-  autoMode:        boolean;
-  bonusManualMode: boolean;
-  onBet:           () => void;
-  onLever:         () => void;
-  onStop:          (reel: 'L' | 'C' | 'R') => void;
-  onAutoToggle:    () => void;
-  onManualToggle:  () => void;
+  buttons:        ButtonState;
+  pressedStops:   readonly [boolean, boolean, boolean];
+  autoMode:       boolean;
+  onBet:          () => void;
+  onLever:        () => void;
+  onStop:         (reel: 'L' | 'C' | 'R') => void;
+  onAutoToggle:   () => void;
+  onSettingsOpen: () => void;
 };
 
 export function Controls({
-  buttons, pressedStops, autoMode, bonusManualMode,
-  onBet, onLever, onStop, onAutoToggle, onManualToggle,
+  buttons, pressedStops, autoMode,
+  onBet, onLever, onStop, onAutoToggle, onSettingsOpen,
 }: Props) {
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+    // stopPropagation: 筐体背景クリックと干渉させない
+    <div
+      style={{ display: 'flex', flexDirection: 'column', gap: 8 }}
+      onClick={e => e.stopPropagation()}
+    >
 
       {/* 行1: MAX BET + LEVER */}
       <div style={{ display: 'flex', gap: 8 }}>
@@ -60,7 +63,7 @@ export function Controls({
         flex={1}
       />
 
-      {/* 行4: AUTO / MANUAL BONUS トグル */}
+      {/* 行4: AUTO / SETTINGS */}
       <div style={{ display: 'flex', gap: 8 }}>
         <ToggleButton
           label={autoMode ? '⏸ AUTO ON' : '▶ AUTO'}
@@ -68,9 +71,9 @@ export function Controls({
           onClick={onAutoToggle}
         />
         <ToggleButton
-          label={bonusManualMode ? '⚙ MANUAL ON' : '⚙ MANUAL'}
-          active={bonusManualMode}
-          onClick={onManualToggle}
+          label="⚙ SETTINGS"
+          active={false}
+          onClick={onSettingsOpen}
         />
       </div>
 

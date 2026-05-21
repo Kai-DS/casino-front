@@ -12,7 +12,8 @@ export type SpinSubPhase =
 export type Phase =
   | { kind: 'SPIN';         sub: SpinSubPhase }
   | { kind: 'BONUS_NOTICE' }
-  | { kind: 'BONUS_ENTRY';  sub: SpinSubPhase }
+  | { kind: 'BONUS_ENTRY';  sub: SpinSubPhase }  // 入賞ゲーム1回 (中段 7-7-7 / 7-7-BAR)
+  | { kind: 'BONUS_GAME';   sub: SpinSubPhase }  // 消化ゲーム (BELL-BELL-BELL × 規定回数)
   | { kind: 'COUNTDOWN';    gameIndex: 1 | 2 | 3; sub: SpinSubPhase }
   | { kind: 'RUSH_JUDGE';   gameIndex: 1 | 2 | 3 | 4 | 5 | 6; sub: SpinSubPhase }
   | { kind: 'RUSH_END' };
@@ -36,6 +37,8 @@ export function isInputAcceptable(
     case 'RUSH_JUDGE':
       return matchesSubPhase(phase.sub, input);
     case 'BONUS_ENTRY':
+      return matchesSubPhase(phase.sub, input);  // 入賞ゲームは常にマニュアル (1ゲームのみ)
+    case 'BONUS_GAME':
       return bonusManualMode ? matchesSubPhase(phase.sub, input) : false;
     default: {
       const _exhaustive: never = phase;

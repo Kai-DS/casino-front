@@ -98,10 +98,9 @@ export function draw1GRen(): boolean {
   return Math.random() < 1 / 110;
 }
 
-/** §14-2: NEON COUNTDOWN 成功率抽選 */
-export function drawCountdownSuccess(setting: SettingLevel): boolean {
-  const rates: Record<SettingLevel, number> = { 1: 0.30, 4: 0.35, 5: 0.40, 6: 0.45 };
-  return Math.random() < rates[setting];
+/** §B3: NEON COUNTDOWN 突入率 100% 確定 (v7.3 §B3) */
+export function drawCountdownSuccess(_setting: SettingLevel): boolean {
+  return true;
 }
 
 /** §17-2: RUSH内部継続抽選 (1G連なし時、約67.7%) */

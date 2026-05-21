@@ -1,5 +1,7 @@
 // D1: 基本ドメイン型
 
+export type SettingLevel = 1 | 4 | 5 | 6;
+
 /** 図柄 (組み込み Symbol との衝突を避けるため GameSymbol にリネーム) */
 export const SYMBOL = {
   SEVEN: 'SEVEN',
@@ -20,12 +22,13 @@ export const FLAG = {
   BELL: 'BELL',
   JACK: 'JACK',
   ANGLE_CHERRY: 'ANGLE_CHERRY',
-  CENTER_CHERRY: 'CENTER_CHERRY',
+  CENTER_CHERRY: 'CENTER_CHERRY',      // RUSH_JUDGE 演出用 (lottery 未使用)
   NORMAL_BIG: 'NORMAL_BIG',
   NORMAL_REG: 'NORMAL_REG',
-  CHERRY_BIG: 'CHERRY_BIG',
-  CHERRY_REG: 'CHERRY_REG',
-  PREMIUM_BIG: 'PREMIUM_BIG',
+  ANGLE_CHERRY_BIG: 'ANGLE_CHERRY_BIG', // 角CHERRY+BIG: 角CHERRY視覚 + BIG → COUNTDOWN
+  ANGLE_CHERRY_REG: 'ANGLE_CHERRY_REG', // 角CHERRY+REG: 角CHERRY視覚 + REG → 通常へ
+  CENTER_CHERRY_BIG: 'CENTER_CHERRY_BIG', // 中段CHERRY+BIG: 確定値固定確率 → RUSH直行 (§A3)
+  PREMIUM_BIG: 'PREMIUM_BIG',           // 単独BIG 1% 変換: LOSS視覚のままRUSH直行 (§A3)
   CEILING_BIG: 'CEILING_BIG',
 } as const;
 export type Flag = typeof FLAG[keyof typeof FLAG];

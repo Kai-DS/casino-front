@@ -37,7 +37,6 @@ export function isInputAcceptable(
     case 'RUSH_JUDGE':
       return matchesSubPhase(phase.sub, input);
     case 'BONUS_ENTRY':
-      return matchesSubPhase(phase.sub, input);  // 入賞ゲームは常にマニュアル (1ゲームのみ)
     case 'BONUS_GAME':
       return bonusManualMode ? matchesSubPhase(phase.sub, input) : false;
     default: {

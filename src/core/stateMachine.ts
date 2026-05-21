@@ -21,8 +21,10 @@ export type Action =
   | { type: 'LEVER' }
   | { type: 'STOP'; reel: 'L' | 'C' | 'R' }
   | { type: 'BONUS_NOTICE_DONE' }    // 告知演出完了 → BONUS_ENTRY へ
-  | { type: 'AUTO_TICK' }            // bonusManualMode=false 時の BONUS_GAME 自動進行
-  | { type: 'RUSH_END_DONE' };       // RUSH終了演出完了 → SPIN へ
+  | { type: 'AUTO_TICK' }            // bonusManualMode=false 時の自動進行
+  | { type: 'RUSH_END_DONE' }        // RUSH終了演出完了 → SPIN へ
+  | { type: 'SET_AUTO';         value: boolean }
+  | { type: 'SET_BONUS_MANUAL'; value: boolean };
 
 const BET_COST          = 3;
 const CEILING_THRESHOLD = 500;  // §C3
@@ -55,6 +57,8 @@ export function transition(gs: GameState, action: Action): GameState {
     case 'BONUS_NOTICE_DONE': return onBonusNoticeDone(gs);
     case 'AUTO_TICK':         return onAutoTick(gs);
     case 'RUSH_END_DONE':     return { ...gs, rushTotalPayout: 0, rushActive: false, phase: { kind: 'SPIN', sub: 'WAIT_BET' } };
+    case 'SET_AUTO':          return { ...gs, autoMode:        action.value };
+    case 'SET_BONUS_MANUAL':  return { ...gs, bonusManualMode: action.value };
     default: {
       const _exhaustive: never = action;
       throw new Error(`transition: unknown action: ${JSON.stringify(_exhaustive)}`);
@@ -67,10 +71,11 @@ export function transition(gs: GameState, action: Action): GameState {
 function onBet(gs: GameState): GameState {
   const ph = gs.phase;
   if (!('sub' in ph) || ph.sub !== 'WAIT_BET') return gs;
-  // BONUS_GAME のみ bonusManualMode で制御 (BONUS_ENTRY は常にマニュアル)
-  if (ph.kind === 'BONUS_GAME' && !gs.bonusManualMode) return gs;
-  if (gs.coins < BET_COST) return gs;
-  return { ...gs, coins: gs.coins - BET_COST, phase: advanceSub(ph, 'WAIT_LEVER') };
+  if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
+  // §29-2: 入賞ゲーム (BONUS_ENTRY) は BET 消費なし
+  if (ph.kind !== 'BONUS_ENTRY' && gs.coins < BET_COST) return gs;
+  const coins = ph.kind === 'BONUS_ENTRY' ? gs.coins : gs.coins - BET_COST;
+  return { ...gs, coins, phase: advanceSub(ph, 'WAIT_LEVER') };
 }
 
 // ── LEVER ─────────────────────────────────────────────────────
@@ -78,7 +83,7 @@ function onBet(gs: GameState): GameState {
 function onLever(gs: GameState): GameState {
   const ph = gs.phase;
   if (!('sub' in ph) || ph.sub !== 'WAIT_LEVER') return gs;
-  if (ph.kind === 'BONUS_GAME' && !gs.bonusManualMode) return gs;
+  if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
 
   // §B4: 入賞ゲーム (BONUS_ENTRY) は中段 7-7-7 / 7-7-BAR 固定
   if (ph.kind === 'BONUS_ENTRY') {
@@ -130,7 +135,7 @@ function onLever(gs: GameState): GameState {
 function onStop(gs: GameState, reel: 'L' | 'C' | 'R'): GameState {
   const ph = gs.phase;
   if (!('sub' in ph)) return gs;
-  if (ph.kind === 'BONUS_GAME' && !gs.bonusManualMode) return gs;
+  if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
 
   const expected = reel === 'L' ? 'STOP_L' : reel === 'C' ? 'STOP_C' : 'STOP_R';
   if (ph.sub !== expected) return gs;
@@ -194,9 +199,10 @@ function onStopR(gs: GameState, ph: Phase): GameState {
       }
       return {
         ...s,
-        normalGameCount: s.normalGameCount + 1,
-        phase:           { kind: 'SPIN', sub: 'WAIT_BET' },
-        pendingFlag:     null,
+        normalGameCount:  s.normalGameCount + 1,
+        lastNormalPayout: normalPayout,
+        phase:            { kind: 'SPIN', sub: 'WAIT_BET' },
+        pendingFlag:      null,
       };
     }
 
@@ -279,25 +285,23 @@ function afterBonusComplete(gs: GameState): GameState {
 function onAutoTick(gs: GameState): GameState {
   if (gs.bonusManualMode) return gs;
   const ph = gs.phase;
-  if (ph.kind !== 'BONUS_GAME') return gs;
+  if (ph.kind !== 'BONUS_ENTRY' && ph.kind !== 'BONUS_GAME') return gs;
 
   switch (ph.sub) {
     case 'WAIT_BET': {
-      if (gs.coins < BET_COST) return gs;
-      return { ...gs, coins: gs.coins - BET_COST, phase: { kind: 'BONUS_GAME', sub: 'WAIT_LEVER' } };
+      // §29-2: BONUS_ENTRY は BET 消費なし; BONUS_GAME は 3枚
+      if (ph.kind === 'BONUS_GAME' && gs.coins < BET_COST) return gs;
+      const coins = ph.kind === 'BONUS_ENTRY' ? gs.coins : gs.coins - BET_COST;
+      return { ...gs, coins, phase: advanceSub(ph, 'WAIT_LEVER') };
     }
-    case 'WAIT_LEVER':
-      return {
-        ...gs,
-        reelPos:      getBonusGameStops(),
-        reelSpinning: [true, true, true],
-        phase:        { kind: 'BONUS_GAME', sub: 'STOP_L' },
-      };
-    case 'STOP_L':
-      return { ...gs, reelSpinning: [false, gs.reelSpinning[1], gs.reelSpinning[2]], phase: { kind: 'BONUS_GAME', sub: 'STOP_C' } };
-    case 'STOP_C':
-      return { ...gs, reelSpinning: [false, false, gs.reelSpinning[2]],              phase: { kind: 'BONUS_GAME', sub: 'STOP_R' } };
-    case 'STOP_R':
-      return onStopR({ ...gs, reelSpinning: [false, false, false] }, ph);
+    case 'WAIT_LEVER': {
+      const reelPos = ph.kind === 'BONUS_ENTRY'
+        ? getBonusEntryStops(gs.bonusContext?.kind === 'NORMAL_REG' || gs.bonusContext?.kind === 'RUSH_REG')
+        : getBonusGameStops();
+      return { ...gs, reelPos, reelSpinning: [true, true, true], phase: advanceSub(ph, 'STOP_L') };
+    }
+    case 'STOP_L': return { ...gs, reelSpinning: [false, gs.reelSpinning[1], gs.reelSpinning[2]], phase: advanceSub(ph, 'STOP_C') };
+    case 'STOP_C': return { ...gs, reelSpinning: [false, false, gs.reelSpinning[2]],              phase: advanceSub(ph, 'STOP_R') };
+    case 'STOP_R': return onStopR({ ...gs, reelSpinning: [false, false, false] }, ph);
   }
 }

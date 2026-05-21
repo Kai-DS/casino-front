@@ -37,7 +37,7 @@ export function onRushStopL(gs: GameState): GameState {
   // Left[4] = CHERRY が center row に表示 → RUSH継続の確定演出 (reels.ts §B2 参照)
   const cherryPos = getCenterCherryStopPositionLeft(); // = 4 as ReelIndex
   const [, c, r] = gs.reelPos;
-  return { ...gs, reelPos: [cherryPos, c, r] };
+  return { ...gs, reelPos: [cherryPos, c, r] as const };
 }
 
 /**

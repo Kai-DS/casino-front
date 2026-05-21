@@ -10,7 +10,8 @@ export interface GameState {
   settingLevel: 1 | 4 | 5 | 6;
 
   // コイン
-  coins: number;
+  coins:           number;
+  lastNormalPayout: number;  // 直前の通常スピン払い出し (Counters 表示用)
 
   // 抽選
   pendingFlag: Flag | null;

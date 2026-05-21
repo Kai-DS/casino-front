@@ -18,7 +18,11 @@ export type ButtonState = {
 export type LCDContent =
   | { mode: 'normal' }
   | { mode: 'bonus_notice'; notifyPattern: NotifyPattern | null }
-  | { mode: 'bonus_game';   bonusKind: NonNullable<BonusContext>['kind']; remainingPayout: number }
+  | {
+      mode: 'bonus_game';
+      main: { bonusKind: NonNullable<BonusContext>['kind']; remainingPayout: number };
+      sub:  { setIndex: number; totalPayout: number } | null;  // null = 非RUSH中
+    }
   | { mode: 'countdown';    gameIndex: 1 | 2 | 3 }
   | { mode: 'countdown_revival'; gameIndex: 1 | 2 | 3 }
   | { mode: 'rush_judge';   gameIndex: 1|2|3|4|5|6; setIndex: number }

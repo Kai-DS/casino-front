@@ -78,7 +78,14 @@ function deriveLCDContent(gs: GameState, mode: LCDMode): LCDContent {
     case 'bonus_game': {
       const ctx = gs.bonusContext;
       if (ctx === null) return { mode: 'normal' };
-      return { mode: 'bonus_game', bonusKind: ctx.kind, remainingPayout: ctx.remainingPayout };
+      // §A4: メイン=ボーナス消化情報 / サブ=RUSHセット情報 (RUSH中のみ)
+      return {
+        mode: 'bonus_game',
+        main: { bonusKind: ctx.kind, remainingPayout: ctx.remainingPayout },
+        sub:  gs.rushActive
+          ? { setIndex: gs.rushSetIndex, totalPayout: gs.rushTotalPayout }
+          : null,
+      };
     }
 
     case 'countdown':

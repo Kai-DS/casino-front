@@ -243,6 +243,10 @@ function violatesConstraint(
   const result = evaluateLines(positions);
   const hasBonus = result.hits.some(h => h.role === 'BIG' || h.role === 'REG');
 
+  // ボーナス入賞ゲーム: SEVEN/BAR を狙っている → ボーナス完成はむしろ正解 (蹴飛ばさない)
+  const buildingBonus = goals.some(g => g.kind === 'symbol' && (g.sym === S.SEVEN || g.sym === S.BAR));
+  if (buildingBonus) return false;
+
   // 全リール avoid (ハズレ/ボーナス非告知) → いかなる役・チェリーも揃えない
   if (goals.every(g => g.kind === 'avoid')) {
     return result.hits.length > 0 || result.cherry !== null;

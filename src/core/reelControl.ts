@@ -125,7 +125,26 @@ export function decideStop(
     return pressPos as ReelIndex;
   }
 
-  // symbol (BELL/JACK/7) / cherry: 厳密 0〜MAX_SLIP のみ。範囲外なら取りこぼし (目押し必須)。
+  if (goal.kind === 'cherry-angle') {
+    // 角チェリー (左リール)。BAR目押しで CHERRY を角に引き込む。優先順位:
+    //   優先1+2: 上段 or 下段が CHERRY になる最小すべり (角チェリー成立)
+    //   優先3:   中段が CHERRY (角が取れない時のみ。中段チェリー視覚)
+    //   優先4:   いずれも不可ならハズレ目 (取りこぼし、目押し必須)
+    const strip = REEL_STRIPS[COLS[reelIdx]!];
+    for (let k = 0; k <= MAX_SLIP; k++) {
+      const pos = at(k);
+      const top = (pos - 1 + N) % N;
+      const bot = (pos + 1) % N;
+      if (strip[top] === S.CHERRY || strip[bot] === S.CHERRY) return pos as ReelIndex;
+    }
+    for (let k = 0; k <= MAX_SLIP; k++) {
+      const pos = at(k);
+      if (strip[pos] === S.CHERRY) return pos as ReelIndex;
+    }
+    return pressPos as ReelIndex; // 取りこぼし
+  }
+
+  // symbol (BELL/JACK/7) / cherry-center: 厳密 0〜MAX_SLIP のみ。範囲外なら取りこぼし。
   for (let k = 0; k <= MAX_SLIP; k++) {
     const pos = at(k);
     if (goalSatisfied(reelIdx, pos, goal) && allows(pos)) return pos as ReelIndex;

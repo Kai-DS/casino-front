@@ -8,7 +8,7 @@ type Props = {
 
 export function Controls({ autoMode, onAutoToggle, onSettingsOpen }: Props) {
   return (
-    <div style={{ display: 'flex', gap: 8, width: Math.round(773 * 0.55) }}>
+    <div style={{ display: 'flex', gap: 8, width: '100%' }}>
       <ToggleButton
         label={autoMode ? '⏸ AUTO ON' : '▶ AUTO'}
         active={autoMode}

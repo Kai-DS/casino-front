@@ -1,17 +1,21 @@
 import type { AutoSpeed, UISettings } from '../ui/uiSettings';
 import { AUTO_SPEED_LABEL } from '../ui/uiSettings';
+import type { SettingLevel } from '../types/domain';
 
 type Props = {
-  settings:       UISettings;
+  settings:        UISettings;
   bonusManualMode: boolean;
-  onClose:        () => void;
-  onChange:       (patch: Partial<UISettings>) => void;
-  onBonusManual:  (v: boolean) => void;
+  settingLevel:    SettingLevel;
+  onClose:         () => void;
+  onChange:        (patch: Partial<UISettings>) => void;
+  onBonusManual:   (v: boolean) => void;
+  onSettingLevel:  (level: SettingLevel) => void;
 };
 
 const SPEEDS: AutoSpeed[] = ['normal', 'double', 'turbo'];
+const SETTING_LEVELS: SettingLevel[] = [1, 4, 5, 6];
 
-export function SettingsModal({ settings, bonusManualMode, onClose, onChange, onBonusManual }: Props) {
+export function SettingsModal({ settings, bonusManualMode, settingLevel, onClose, onChange, onBonusManual, onSettingLevel }: Props) {
   return (
     // オーバーレイ — クリックで閉じる
     <div
@@ -45,6 +49,33 @@ export function SettingsModal({ settings, bonusManualMode, onClose, onChange, on
         <div style={{ fontSize: 14, fontWeight: 'bold', color: '#00ffcc', letterSpacing: 2 }}>
           ⚙ SETTINGS
         </div>
+
+        {/* 設定 (1/4/5/6) */}
+        <fieldset style={{ border: '1px solid #223', borderRadius: 6, padding: '8px 12px', margin: 0 }}>
+          <legend style={{ fontSize: 11, color: '#666', letterSpacing: 1, padding: '0 4px' }}>設定 (変更でリセット)</legend>
+          <div style={{ display: 'flex', gap: 8, marginTop: 4 }}>
+            {SETTING_LEVELS.map(lv => (
+              <button
+                key={lv}
+                onClick={() => onSettingLevel(lv)}
+                style={{
+                  flex:         1,
+                  height:       36,
+                  borderRadius: 6,
+                  border:       `1px solid ${settingLevel === lv ? '#ffd700' : '#445'}`,
+                  background:   settingLevel === lv ? '#ffd70022' : 'transparent',
+                  color:        settingLevel === lv ? '#ffd700' : '#889',
+                  fontSize:     13,
+                  fontWeight:   'bold',
+                  fontFamily:   'inherit',
+                  cursor:       'pointer',
+                }}
+              >
+                設定{lv}
+              </button>
+            ))}
+          </div>
+        </fieldset>
 
         {/* AUTO速度 */}
         <fieldset style={{ border: '1px solid #223', borderRadius: 6, padding: '8px 12px', margin: 0 }}>

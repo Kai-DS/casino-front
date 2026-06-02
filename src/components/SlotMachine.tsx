@@ -25,7 +25,7 @@ export type SpinClock = { startTime: number; startPos: [number, number, number] 
 
 const INITIAL: GameState = {
   settingLevel:              1,
-  coins:                     50,
+  coins:                     1000,
   lastNormalPayout:          0,
   lastWinLabel:              '---',
   replayActive:              false,
@@ -218,28 +218,21 @@ export function SlotMachine() {
   return (
     <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start' }}>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <Cabinet
-          reelPos={gs.reelPos}
-          reelSpinning={gs.reelSpinning}
-          spinClock={spinClock}
-          maxBetPressed={gs.maxBetPressed}
-          leverDown={gs.leverDown}
-          pressedStops={pressedStops}
-          onBet={handleBet}
-          onLever={handleLever}
-          onStop={handleStop}
-          isNotice={gs.phase.kind === 'BONUS_NOTICE'}
-          onClick={handleScreenClick}
-        />
-        <Controls
-          autoMode={gs.autoMode}
-          onAutoToggle={handleAutoToggle}
-          onSettingsOpen={() => setShowSettings(true)}
-        />
-      </div>
+      <Cabinet
+        reelPos={gs.reelPos}
+        reelSpinning={gs.reelSpinning}
+        spinClock={spinClock}
+        maxBetPressed={gs.maxBetPressed}
+        leverDown={gs.leverDown}
+        pressedStops={pressedStops}
+        onBet={handleBet}
+        onLever={handleLever}
+        onStop={handleStop}
+        isNotice={gs.phase.kind === 'BONUS_NOTICE'}
+        onClick={handleScreenClick}
+      />
 
-      {/* 情報パネル (筐体右横) */}
+      {/* 情報パネル + 操作 (筐体右横) */}
       <div style={{
         display:       'flex',
         flexDirection: 'column',
@@ -247,6 +240,11 @@ export function SlotMachine() {
         minWidth:      180,
         paddingTop:    8,
       }}>
+        <Controls
+          autoMode={gs.autoMode}
+          onAutoToggle={handleAutoToggle}
+          onSettingsOpen={() => setShowSettings(true)}
+        />
         <div style={{ fontSize: 11, color: '#446', letterSpacing: 1, fontFamily: 'monospace' }}>
           {phaseLabel}
           {gs.bonusContext && (
@@ -292,9 +290,11 @@ export function SlotMachine() {
         <SettingsModal
           settings={uiSettings}
           bonusManualMode={gs.bonusManualMode}
+          settingLevel={gs.settingLevel}
           onClose={() => setShowSettings(false)}
           onChange={handleSettingsChange}
           onBonusManual={v => dispatch({ type: 'SET_BONUS_MANUAL', value: v })}
+          onSettingLevel={lv => dispatch({ type: 'SET_SETTING_LEVEL', level: lv })}
         />
       )}
 

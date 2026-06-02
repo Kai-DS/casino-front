@@ -42,7 +42,7 @@ const INITIAL: GameState = {
   rushTotalPayout:           0,
   rushInternalContinueFlag:  false,
   autoMode:                  false,
-  bonusManualMode:           false,
+  bonusManualMode:           true,  // デフォルト手動消化 (AUTO消化はオプション)
   reelPos:                   getNormalSpinStops(FLAG.LOSS),
   reelSpinning:              [false, false, false],
   maxBetPressed:             false,

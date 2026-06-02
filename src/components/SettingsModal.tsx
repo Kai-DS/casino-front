@@ -108,15 +108,15 @@ export function SettingsModal({ settings, bonusManualMode, settingLevel, onClose
           ペカったら自動を止めて手動に戻る
         </label>
 
-        {/* ボーナス手動消化 */}
+        {/* ボーナス消化モード (デフォルト手動、チェックでAUTO消化) */}
         <label style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', fontSize: 13 }}>
           <input
             type="checkbox"
-            checked={bonusManualMode}
-            onChange={e => onBonusManual(e.target.checked)}
+            checked={!bonusManualMode}
+            onChange={e => onBonusManual(!e.target.checked)}
             style={{ accentColor: '#ffaa00', width: 16, height: 16 }}
           />
-          <span>ボーナス手動消化 <span style={{ fontSize: 10, color: '#666' }}>(BET/LEVER/STOP 操作)</span></span>
+          <span>ボーナスをAUTOで消化 <span style={{ fontSize: 10, color: '#666' }}>(OFFで手動 BET/LEVER/STOP)</span></span>
         </label>
 
         {/* 閉じるボタン */}

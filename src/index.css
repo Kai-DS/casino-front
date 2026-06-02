@@ -25,6 +25,11 @@ body {
   100%      { transform: translateY(-6px); opacity: 0.2; }
 }
 
+@keyframes reel-strip-scroll {
+  from { background-position-y: 0; }
+  to   { background-position-y: -1750px; }
+}
+
 @keyframes notice-flash {
   0%, 100% { background: #1a0033; }
   50%      { background: #440055; }

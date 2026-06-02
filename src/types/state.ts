@@ -12,6 +12,7 @@ export interface GameState {
   // コイン
   coins:           number;
   lastNormalPayout: number;  // 直前の通常スピン払い出し (Counters 表示用)
+  lastWinLabel:     string;  // 直前の成立役表示用 (例: "REPLAY", "BELL", "---")
 
   // 抽選
   pendingFlag: Flag | null;
@@ -34,6 +35,9 @@ export interface GameState {
   rushSetIndex: number;               // 1始まり
   rushTotalPayout: number;
   rushInternalContinueFlag: boolean;  // 6G目 STOP_L で中段CHERRY 出現条件 (v7.3 B2)
+
+  // 再遊技 (REPLAY 成立で true、次ゲームの BET が無料)
+  replayActive: boolean;
 
   // 操作モード
   autoMode: boolean;

@@ -3,23 +3,23 @@
 // BONUS_ENTRY = 入賞ゲーム1回 (7-7-7 or 7-7-BAR 固定, 払い出し 0)
 // BONUS_GAME  = 消化ゲーム    (BELL-BELL-BELL 固定, 14枚×規定回数)
 
-import { FLAG, type Flag, type SettingLevel } from '../types/domain';
+import { FLAG, type Flag, type SettingLevel, type ReelIndex } from '../types/domain';
 import type { GameState } from '../types/state';
 import type { Phase, SpinSubPhase } from '../types/phase';
 import { nextStateAfterBonus } from '../types/bonus';
 import { selectFlag, drawCountdownSuccess } from './lottery';
-import { getNormalSpinStops, getBonusEntryStops, getBonusGameStops } from './reels';
+import { reelGoals, decideStop, autoAimPos } from './reelControl';
 import { evaluateLines } from './paylines';
-import { computeNormalPayout, computeBonusGamePayout } from './payout';
+import { getRolePayout, computeBonusGamePayout, isBonusRole } from './payout';
 import { isBonusFlagType, toBonusContext, withRemainingPayout } from './bonus';
-import { initRushSet, onRushStopL, onRushStopR } from './rush';
+import { initRushSet, onRushStopR } from './rush';
 
 // ── アクション定義 ─────────────────────────────────────────────
 
 export type Action =
   | { type: 'BET' }
   | { type: 'LEVER' }
-  | { type: 'STOP'; reel: 'L' | 'C' | 'R' }
+  | { type: 'STOP'; reel: 'L' | 'C' | 'R'; pressPos: number }
   | { type: 'BONUS_NOTICE_DONE' }    // 告知演出完了 → BONUS_ENTRY へ
   | { type: 'AUTO_TICK' }            // bonusManualMode=false 時の自動進行
   | { type: 'RUSH_END_DONE' }        // RUSH終了演出完了 → SPIN へ
@@ -33,6 +33,14 @@ export type Action =
 
 const BET_COST          = 3;
 const CEILING_THRESHOLD = 500;  // §C3
+
+/** チェリー当選フラグか (これらの時のみチェリーを払い出す。視覚だけのガセは無効) */
+function isCherryFlag(flag: Flag | null): boolean {
+  return flag === FLAG.ANGLE_CHERRY
+    || flag === FLAG.ANGLE_CHERRY_BIG
+    || flag === FLAG.ANGLE_CHERRY_REG
+    || flag === FLAG.CENTER_CHERRY_BIG;
+}
 
 // ── フェーズ生成ヘルパー (gameIndex 等を型安全に引き継ぐ) ─────
 
@@ -58,7 +66,7 @@ export function transition(gs: GameState, action: Action): GameState {
   switch (action.type) {
     case 'BET':               return onBet(gs);
     case 'LEVER':             return onLever(gs);
-    case 'STOP':              return onStop(gs, action.reel);
+    case 'STOP':              return onStop(gs, action.reel, action.pressPos);
     case 'BONUS_NOTICE_DONE': return onBonusNoticeDone(gs);
     case 'AUTO_TICK':         return onAutoTick(gs);
     case 'RUSH_END_DONE':     return { ...gs, rushTotalPayout: 0, rushActive: false, phase: { kind: 'SPIN', sub: 'WAIT_BET' } };
@@ -94,10 +102,11 @@ function onBet(gs: GameState): GameState {
   const ph = gs.phase;
   if (!('sub' in ph) || ph.sub !== 'WAIT_BET') return gs;
   if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
-  // §29-2: 入賞ゲーム (BONUS_ENTRY) は BET 消費なし
-  if (ph.kind !== 'BONUS_ENTRY' && gs.coins < BET_COST) return gs;
-  const coins = ph.kind === 'BONUS_ENTRY' ? gs.coins : gs.coins - BET_COST;
-  return { ...gs, coins, phase: advanceSub(ph, 'WAIT_LEVER') };
+  // §29-2: 入賞ゲーム (BONUS_ENTRY) は BET 消費なし。再遊技 (replayActive) も無料。
+  const free = ph.kind === 'BONUS_ENTRY' || gs.replayActive;
+  if (!free && gs.coins < BET_COST) return gs;
+  const coins = free ? gs.coins : gs.coins - BET_COST;
+  return { ...gs, coins, replayActive: false, maxBetPressed: true, leverDown: false, phase: advanceSub(ph, 'WAIT_LEVER') };
 }
 
 // ── LEVER ─────────────────────────────────────────────────────
@@ -107,24 +116,11 @@ function onLever(gs: GameState): GameState {
   if (!('sub' in ph) || ph.sub !== 'WAIT_LEVER') return gs;
   if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
 
-  // §B4: 入賞ゲーム (BONUS_ENTRY) は中段 7-7-7 / 7-7-BAR 固定
-  if (ph.kind === 'BONUS_ENTRY') {
-    const ctx   = gs.bonusContext!;
-    const isREG = ctx.kind === 'NORMAL_REG' || ctx.kind === 'RUSH_REG';
+  // ボーナス入賞/消化ゲーム: 回転開始のみ (出目は停止時に引き込みで揃える)
+  if (ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') {
     return {
       ...gs,
-      reelPos:      getBonusEntryStops(isREG),
-      reelSpinning: [true, true, true],
-      leverDown:    true,
-      phase:        advanceSub(ph, 'STOP_L'),
-    };
-  }
-
-  // BONUS_GAME: 毎ゲーム BELL-BELL-BELL 固定 (§7-1)
-  if (ph.kind === 'BONUS_GAME') {
-    return {
-      ...gs,
-      reelPos:      getBonusGameStops(),
+      maxBetPressed: false,
       reelSpinning: [true, true, true],
       leverDown:    true,
       phase:        advanceSub(ph, 'STOP_L'),
@@ -152,7 +148,7 @@ function onLever(gs: GameState): GameState {
     pendingFlag,
     normalGameCount,
     debugForcedFlag,
-    reelPos:      getNormalSpinStops(pendingFlag),
+    maxBetPressed: false,
     reelSpinning: [true, true, true],
     leverDown:    true,
     phase:        advanceSub(ph, 'STOP_L'),
@@ -161,7 +157,7 @@ function onLever(gs: GameState): GameState {
 
 // ── STOP ──────────────────────────────────────────────────────
 
-function onStop(gs: GameState, reel: 'L' | 'C' | 'R'): GameState {
+function onStop(gs: GameState, reel: 'L' | 'C' | 'R', pressPos: number): GameState {
   const ph = gs.phase;
   if (!('sub' in ph)) return gs;
   if ((ph.kind === 'BONUS_ENTRY' || ph.kind === 'BONUS_GAME') && !gs.bonusManualMode) return gs;
@@ -169,30 +165,56 @@ function onStop(gs: GameState, reel: 'L' | 'C' | 'R'): GameState {
   const expected = reel === 'L' ? 'STOP_L' : reel === 'C' ? 'STOP_C' : 'STOP_R';
   if (ph.sub !== expected) return gs;
 
-  // §B2: RUSH_JUDGE 6G目 STOP_L → rushInternalContinueFlag に応じて中段CHERRY強制
-  let s = gs;
-  if (reel === 'L' && ph.kind === 'RUSH_JUDGE' && ph.gameIndex === 6) {
-    s = onRushStopL(gs);
+  const reelIdx = reel === 'L' ? 0 : reel === 'C' ? 1 : 2;
+  return applyStop(gs, reelIdx, pressPos);
+}
+
+/**
+ * コマ滑り停止の中核。pressPos を起点に引き込み/蹴飛ばしで停止位置を確定し、
+ * 次サブフェーズへ進める。手動・AUTO 共通 (停止順は 左→中→右 固定)。
+ */
+function applyStop(gs: GameState, reelIdx: 0 | 1 | 2, pressPos: number): GameState {
+  const ph = gs.phase;
+  if (!('sub' in ph)) return gs;
+
+  const goals = reelGoals(gs);
+  // 左→中→右 固定順: reelIdx 未満のリールは停止済み
+  const stoppedMask: [boolean, boolean, boolean] = [reelIdx >= 1, reelIdx >= 2, false];
+  const target = decideStop(reelIdx, pressPos, goals, gs.reelPos, stoppedMask);
+
+  const nextPos: [ReelIndex, ReelIndex, ReelIndex] = [gs.reelPos[0], gs.reelPos[1], gs.reelPos[2]];
+  nextPos[reelIdx] = target;
+  const nextSpin: [boolean, boolean, boolean] = [gs.reelSpinning[0], gs.reelSpinning[1], gs.reelSpinning[2]];
+  nextSpin[reelIdx] = false;
+
+  if (reelIdx !== 2) {
+    const nextSub = reelIdx === 0 ? 'STOP_C' : 'STOP_R';
+    return {
+      ...gs,
+      reelPos:      nextPos,
+      reelSpinning: nextSpin,
+      leverDown:    reelIdx === 0 ? false : gs.leverDown,
+      phase:        advanceSub(ph, nextSub),
+    };
   }
 
-  const spinIdx = reel === 'L' ? 0 : reel === 'C' ? 1 : 2;
-  const nextSpin: [boolean, boolean, boolean] = [s.reelSpinning[0], s.reelSpinning[1], s.reelSpinning[2]];
-  nextSpin[spinIdx] = false;
-
-  if (reel !== 'R') {
-    const nextSub = reel === 'L' ? 'STOP_C' : 'STOP_R';
-    return { ...s, reelSpinning: nextSpin, phase: advanceSub(ph, nextSub) };
-  }
-
-  return onStopR({ ...s, reelSpinning: nextSpin }, ph);
+  return onStopR({ ...gs, reelPos: nextPos, reelSpinning: nextSpin }, ph);
 }
 
 // ── 全停止 → 評価 → フェーズ遷移 ─────────────────────────────
 
 function onStopR(gs: GameState, ph: Phase): GameState {
-  // §B4: 入賞ゲーム完了 → 払い出しなし → BONUS_GAME へ
+  // §B4: 入賞ゲーム。7が揃えば BONUS_GAME へ。取りこぼしたら持ち越し (再スピン)。
   if (ph.kind === 'BONUS_ENTRY') {
-    return { ...gs, phase: { kind: 'BONUS_GAME', sub: 'WAIT_BET' } };
+    const ctx    = gs.bonusContext!;
+    const isREG  = ctx.kind === 'NORMAL_REG' || ctx.kind === 'RUSH_REG';
+    const result = evaluateLines(gs.reelPos);
+    const aligned = isREG
+      ? result.hits.some(h => h.role === 'REG')
+      : result.hits.some(h => h.role === 'BIG');
+    return aligned
+      ? { ...gs, phase: { kind: 'BONUS_GAME',  sub: 'WAIT_BET' } }
+      : { ...gs, phase: { kind: 'BONUS_ENTRY', sub: 'WAIT_BET' } }; // 持ち越し
   }
 
   // ボーナス消化ゲーム: computeBonusGamePayout で処理 (evaluateLines 不要)
@@ -210,9 +232,21 @@ function onStopR(gs: GameState, ph: Phase): GameState {
   }
 
   // 通常・COUNTDOWN・RUSH_JUDGE: 小役評価
-  const evalResult   = evaluateLines(gs.reelPos);
-  const normalPayout = computeNormalPayout(evalResult);
-  let s: GameState   = { ...gs, coins: gs.coins + normalPayout };
+  // チェリーは「チェリー当選フラグがある時のみ」払い出す (見た目で角に出てもガセは無効)
+  const evalResult    = evaluateLines(gs.reelPos);
+  const cherryAllowed = isCherryFlag(gs.pendingFlag) && evalResult.cherry !== null;
+  let normalPayout = 0;
+  for (const hit of evalResult.hits) normalPayout += getRolePayout(hit.role);
+  if (cherryAllowed) normalPayout += 2;
+  const smallHit = evalResult.hits.find(h => !isBonusRole(h.role));
+  // REPLAY 成立 → 次ゲームの BET が無料 (再遊技)
+  const replayHit = evalResult.hits.some(h => h.role === 'REPLAY');
+  const winLabel = cherryAllowed
+    ? 'CHERRY'
+    : smallHit !== undefined
+      ? smallHit.role
+      : '---';
+  let s: GameState   = { ...gs, coins: gs.coins + normalPayout, lastWinLabel: winLabel, replayActive: replayHit };
 
   switch (ph.kind) {
     case 'SPIN': {
@@ -222,6 +256,7 @@ function onStopR(gs: GameState, ph: Phase): GameState {
           ...s,
           bonusContext:    toBonusContext(flag, s.rushSetIndex, s.rushActive),
           normalGameCount: 0,
+          lastWinLabel:    flag as string,
           phase:           { kind: 'BONUS_NOTICE' },
           pendingFlag:     null,
         };
@@ -323,14 +358,10 @@ function onAutoTick(gs: GameState): GameState {
       const coins = ph.kind === 'BONUS_ENTRY' ? gs.coins : gs.coins - BET_COST;
       return { ...gs, coins, phase: advanceSub(ph, 'WAIT_LEVER') };
     }
-    case 'WAIT_LEVER': {
-      const reelPos = ph.kind === 'BONUS_ENTRY'
-        ? getBonusEntryStops(gs.bonusContext?.kind === 'NORMAL_REG' || gs.bonusContext?.kind === 'RUSH_REG')
-        : getBonusGameStops();
-      return { ...gs, reelPos, reelSpinning: [true, true, true], phase: advanceSub(ph, 'STOP_L') };
-    }
-    case 'STOP_L': return { ...gs, reelSpinning: [false, gs.reelSpinning[1], gs.reelSpinning[2]], phase: advanceSub(ph, 'STOP_C') };
-    case 'STOP_C': return { ...gs, reelSpinning: [false, false, gs.reelSpinning[2]],              phase: advanceSub(ph, 'STOP_R') };
-    case 'STOP_R': return onStopR({ ...gs, reelSpinning: [false, false, false] }, ph);
+    case 'WAIT_LEVER':
+      return { ...gs, reelSpinning: [true, true, true], phase: advanceSub(ph, 'STOP_L') };
+    case 'STOP_L': return applyStop(gs, 0, autoAimPos(gs, 0));
+    case 'STOP_C': return applyStop(gs, 1, autoAimPos(gs, 1));
+    case 'STOP_R': return applyStop(gs, 2, autoAimPos(gs, 2));
   }
 }

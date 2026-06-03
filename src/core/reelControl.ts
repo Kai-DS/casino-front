@@ -38,9 +38,9 @@ export function reelGoals(gs: GameState): [ReelGoal, ReelGoal, ReelGoal] {
       : [{ kind: 'symbol', sym: S.SEVEN }, { kind: 'symbol', sym: S.SEVEN }, { kind: 'symbol', sym: S.SEVEN }];
   }
 
-  // ボーナス消化ゲーム: BELL-BELL-BELL
+  // ボーナス消化ゲーム: GEM-GEM-GEM (消化中のみ GEM が 14枚役)
   if (ph.kind === 'BONUS_GAME') {
-    return [{ kind: 'symbol', sym: S.BELL }, { kind: 'symbol', sym: S.BELL }, { kind: 'symbol', sym: S.BELL }];
+    return [{ kind: 'symbol', sym: S.BLUE_GEM }, { kind: 'symbol', sym: S.BLUE_GEM }, { kind: 'symbol', sym: S.BLUE_GEM }];
   }
 
   // §B2: RUSH継続抽選 6G目 継続確定 → 左中段 CHERRY の継続演出 (pendingFlag 非ボーナス時)

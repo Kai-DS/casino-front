@@ -204,14 +204,14 @@ function applyStop(gs: GameState, reelIdx: 0 | 1 | 2, pressPos: number): GameSta
 // ── 全停止 → 評価 → フェーズ遷移 ─────────────────────────────
 
 function onStopR(gs: GameState, ph: Phase): GameState {
-  // §B4: 入賞ゲーム。7が揃えば BONUS_GAME へ。取りこぼしたら持ち越し (再スピン)。
+  // §B4: 入賞ゲーム。中段ラインに 7が揃えば BONUS_GAME へ。取りこぼしたら持ち越し (再スピン)。
+  // 斜め/上下段でたまたま並んでも成立扱いにしない (ちゃんと中段に揃える必要がある)。
   if (ph.kind === 'BONUS_ENTRY') {
-    const ctx    = gs.bonusContext!;
-    const isREG  = ctx.kind === 'NORMAL_REG' || ctx.kind === 'RUSH_REG';
-    const result = evaluateLines(gs.reelPos);
-    const aligned = isREG
-      ? result.hits.some(h => h.role === 'REG')
-      : result.hits.some(h => h.role === 'BIG');
+    const ctx     = gs.bonusContext!;
+    const isREG   = ctx.kind === 'NORMAL_REG' || ctx.kind === 'RUSH_REG';
+    const target  = isREG ? 'REG' : 'BIG';
+    const result  = evaluateLines(gs.reelPos);
+    const aligned = result.hits.some(h => h.line === 'CENTER' && h.role === target);
     return aligned
       ? { ...gs, phase: { kind: 'BONUS_GAME',  sub: 'WAIT_BET' } }
       : { ...gs, phase: { kind: 'BONUS_ENTRY', sub: 'WAIT_BET' } }; // 持ち越し

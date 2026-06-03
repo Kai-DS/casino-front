@@ -247,9 +247,10 @@ export function SlotMachine() {
         />
         <div style={{ fontSize: 11, color: '#446', letterSpacing: 1, fontFamily: 'monospace' }}>
           {phaseLabel}
-          {gs.bonusContext && (
-            <div style={{ color: '#664', marginTop: 2 }}>
-              [{gs.bonusContext.kind} rem={gs.bonusContext.remainingPayout}]
+          {/* 揃えた後 (消化中) のみ BIG/REG を表示。当たった瞬間は種別を出さない */}
+          {gs.phase.kind === 'BONUS_GAME' && gs.bonusContext && (
+            <div style={{ color: '#ffaa00', marginTop: 2, fontWeight: 'bold', fontSize: 13 }}>
+              {bonusKindLabel(gs.bonusContext.kind)} 消化中
             </div>
           )}
         </div>
@@ -302,6 +303,11 @@ export function SlotMachine() {
   );
 }
 
+// ボーナスコンテキストの種別を BIG / REG の表示用ラベルに変換
+function bonusKindLabel(kind: string): 'BIG' | 'REG' {
+  return kind.includes('REG') ? 'REG' : 'BIG';
+}
+
 // ── LCD プレースホルダー ───────────────────────────────────────
 
 function LcdPlaceholder({ lcdContent }: { lcdContent: LCDContent }) {
@@ -310,7 +316,7 @@ function LcdPlaceholder({ lcdContent }: { lcdContent: LCDContent }) {
       case 'normal':            return '— NORMAL —';
       case 'bonus_notice':      return `★ BONUS! ${lcdContent.notifyPattern ?? ''}`;
       case 'bonus_game':
-        return `${lcdContent.main.bonusKind}  rem:${lcdContent.main.remainingPayout}`
+        return `${bonusKindLabel(lcdContent.main.bonusKind)} 消化中  rem:${lcdContent.main.remainingPayout}`
           + (lcdContent.sub ? `  [RUSH SET ${lcdContent.sub.setIndex}  +${lcdContent.sub.totalPayout}]` : '');
       case 'countdown':         return `COUNTDOWN  G${lcdContent.gameIndex}/3`;
       case 'countdown_revival': return `REVIVAL!!  G${lcdContent.gameIndex}/3`;

@@ -42,7 +42,9 @@ function deriveLCDMode(gs: GameState): LCDMode {
     case 'RUSH_JUDGE':
       return 'rush_judge';
 
+    // 入賞ゲーム (7揃え前) は種別を出さない。消化ゲームになって初めて BIG/REG 表示
     case 'BONUS_ENTRY':
+      return 'bonus_notice';
     case 'BONUS_GAME':
       return 'bonus_game';
 

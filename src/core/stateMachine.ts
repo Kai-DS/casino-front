@@ -252,11 +252,11 @@ function onStopR(gs: GameState, ph: Phase): GameState {
     case 'SPIN': {
       const flag = s.pendingFlag!;
       if (isBonusFlagType(flag)) {
+        // 当たった瞬間は種別 (BIG/REG) を成立役に出さない (揃えてから判明)
         return {
           ...s,
           bonusContext:    toBonusContext(flag, s.rushSetIndex, s.rushActive),
           normalGameCount: 0,
-          lastWinLabel:    flag as string,
           phase:           { kind: 'BONUS_NOTICE' },
           pendingFlag:     null,
         };
